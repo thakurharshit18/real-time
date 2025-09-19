@@ -4,21 +4,42 @@ import {createUserSchema,CreateRoomSchema,SigninSchema} from "@repo/common/zod";
 import {JWT_SECRET} from "@repo/backend-common/jwt";
 import { middleware } from "./middleware.js";
 import {prismaclient} from "@repo/db/client";
+import bcrypt from "bcrypt";
 const app = express();
 
 app.use(express.json());
-app.post('/signin',(req,res)=>{
-       const data =SigninSchema.safeParse(req.body);
-    if(!data.success){
+app.post('/signin',async(req,res)=>{
+       const ParsedData =SigninSchema.safeParse(req.body);
+    if(!ParsedData.success){
         res.json({
             message:"Incorrect Inputs"
         })
         return;
     }
-const userId = 1;
-jwt.sign({
-    userId
-},JWT_SECRET || "");
+try {
+ const user =  await prismaclient.user.findUnique({
+    where:{
+        email:ParsedData.data.username
+    }
+})
+if(!user){
+    return res.status(401).json({message:"User does not exist"});
+}
+const isPasswordValid = await bcrypt.compare(ParsedData.data.password,user.password);
+if(!isPasswordValid){
+    return res.status(401).json({
+        message:"Invalid Credentials"
+    })
+}
+
+const token = jwt.sign({userId:user?.id},JWT_SECRET);
+res.json({
+    token
+});
+
+} catch (error) {
+    return res.json({message:"Internal server error"});
+}
 })
 
 app.post('/signup',async(req,res)=>{
@@ -31,10 +52,11 @@ app.post('/signup',async(req,res)=>{
     }
 
   try {
+    const hashedPassword = await bcrypt.hash(ParsedData.data.password,10);
   const user =   await prismaclient.user.create({
     data:{
         email:ParsedData.data?.username,
-        password:ParsedData.data?.password,
+        password:hashedPassword,
         name:ParsedData.data?.name
     }
  })
@@ -52,18 +74,35 @@ app.post('/signup',async(req,res)=>{
 })
 
 app.post('/room',middleware,async(req,res)=>{
-   const ParsedData =CreateRoomSchema.safeParse(req.body);
-    if(!ParsedData.success){
-        res.json({
-            message:"Incorrect Inputs"
-        })
-        return;
-    }
+   
+   const ParsedData = CreateRoomSchema.safeParse(req.body);
+   if(!ParsedData.success){
+    res.json({
+        message:"Incorrect Inputs"
+    })
+    return;
+   }
+
     try {
-        await prismaclient.room.create
+    //@ts-ignore
+        const userID = req.userId;
+        if(!userID){
+            return res.json({
+                message:"unauthorized"
+            })
+        }
+       const room =  await prismaclient.room.create({
+        data:{
+        slug:ParsedData.data.name,
+        adminId:userID
+        }
+       })
+       return res.json({
+        roomId:room.id
+       })
 
     } catch (error) {
-        
+res.status(401).json({message:"invalid Credentials"});        
     }
 
 })

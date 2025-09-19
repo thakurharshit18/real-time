@@ -14,7 +14,7 @@ if(!token){
    
 try {
     const decoded = jwt.verify(token,JWT_SECRET) as jwtPayload;
-    (req as any).user = decoded;
+    (req as any).userId = decoded.userId;
     next();
 } catch (error) {
     res.status(403).json({error:"Invalid or expired token"});
